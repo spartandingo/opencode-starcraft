@@ -1,0 +1,23 @@
+{
+  "name": "opencode-starcraft",
+  "version": "1.0.0",
+  "description": "StarCraft sound effects plugin for OpenCode - plays iconic Protoss and Terran voice lines on session events",
+  "main": "index.js",
+  "type": "module",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "starcraft",
+    "sounds",
+    "notifications"
+  ],
+  "author": "Brett Christensen",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spartandingo/opencode-starcraft.git"
+  },
+  "files": [
+    "index.js"
+  ]
+}
