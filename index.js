@@ -8,9 +8,8 @@
 
 import { join } from "path"
 import { homedir } from "os"
-import { existsSync, mkdirSync, createWriteStream, readdirSync } from "fs"
-import { pipeline } from "stream/promises"
-import { createRequire } from "module"
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "fs"
+import { spawn } from "child_process"
 
 const SOUNDS_DIR = join(homedir(), ".config", "opencode", "sounds", "starcraft")
 
@@ -75,6 +74,17 @@ function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
+function playSound(file) {
+  if (!existsSync(file)) return
+
+  const cmd = process.platform === "darwin" ? "afplay" : "paplay"
+  const child = spawn(cmd, [file], {
+    detached: true,
+    stdio: "ignore",
+  })
+  child.unref()
+}
+
 function soundsExist() {
   if (!existsSync(SOUNDS_DIR)) return false
   try {
@@ -89,7 +99,6 @@ async function downloadSounds(log) {
   log("Downloading StarCraft sounds...")
   mkdirSync(SOUNDS_DIR, { recursive: true })
 
-  // Dynamic import JSZip (bundled with bun)
   const { default: JSZip } = await import("jszip")
 
   for (const [name, pack] of Object.entries(SOUND_PACKS)) {
@@ -108,9 +117,7 @@ async function downloadSounds(log) {
         const entry = zip.file(zipPath)
         if (entry) {
           const data = await entry.async("nodebuffer")
-          const outPath = join(SOUNDS_DIR, outName)
-          const { writeFileSync } = await import("fs")
-          writeFileSync(outPath, data)
+          writeFileSync(join(SOUNDS_DIR, outName), data)
         } else {
           log(`  Warning: ${zipPath} not found in ${name} archive`)
         }
@@ -123,7 +130,7 @@ async function downloadSounds(log) {
   log("StarCraft sounds ready!")
 }
 
-export const StarcraftSoundsPlugin = async ({ client, $ }) => {
+export const StarcraftSoundsPlugin = async ({ client }) => {
   const log = async (msg) => {
     try {
       await client.app.log({
@@ -152,24 +159,7 @@ export const StarcraftSoundsPlugin = async ({ client, $ }) => {
       const sounds = EVENT_SOUNDS[event.type]
       if (!sounds || sounds.length === 0) return
 
-      const file = join(SOUNDS_DIR, pick(sounds))
-      if (!existsSync(file)) return
-
-      try {
-        // afplay is macOS built-in; aplay/paplay for Linux
-        if (process.platform === "darwin") {
-          await $`afplay ${file} &`
-        } else {
-          // Try paplay (PulseAudio) first, fall back to aplay (ALSA)
-          try {
-            await $`paplay ${file} &`
-          } catch {
-            await $`aplay ${file} &`
-          }
-        }
-      } catch {
-        // Silently ignore playback errors
-      }
+      playSound(join(SOUNDS_DIR, pick(sounds)))
     },
   }
 }
