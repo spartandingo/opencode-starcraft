@@ -1,6 +1,6 @@
 # opencode-starcraft
 
-StarCraft sound effects plugin for [OpenCode](https://opencode.ai). Plays iconic Protoss and Terran voice lines when things happen in your coding session.
+StarCraft sound effects plugin for [OpenCode](https://opencode.ai). Plays iconic Protoss and Terran voice lines and shows desktop notifications when things happen in your coding session.
 
 ## Install
 
@@ -33,6 +33,8 @@ Sound files are downloaded automatically on first run from [The Sounds Resource]
 
 Audio playback uses `child_process.spawn` with platform-native commands (`afplay` on macOS, `paplay` on Linux) -- no additional dependencies required.
 
+Desktop notifications are also best-effort and use platform-native tools (`osascript` on macOS, `notify-send` on Linux).
+
 ## Events
 
 | OpenCode Event | Sound | Quote |
@@ -43,12 +45,42 @@ Audio playback uses `child_process.spawn` with platform-native commands (`afplay
 | `session.error` | `not-enough-minerals-*.wav` / `not-enough-vespene-gas.wav` | "Not enough minerals" / "Insufficient vespene gas" |
 | `permission.asked` | `scv-whaddya-want.wav` / `scv-im-not-listening.wav` | "Whaddya want?" |
 
+## Configuration
+
+Create `~/.config/opencode/opencode-starcraft.json` to enable/disable sounds or visual notifications:
+
+```json
+{
+  "sound": {
+    "enabled": true
+  },
+  "notifications": {
+    "enabled": true
+  }
+}
+```
+
+Example: disable visual notifications while keeping sounds enabled:
+
+```json
+{
+  "sound": {
+    "enabled": true
+  },
+  "notifications": {
+    "enabled": false
+  }
+}
+```
+
 ## Platform support
 
 | Platform | Audio command | Status |
 |---|---|---|
 | macOS | `afplay` (built-in) | Tested |
 | Linux | `paplay` (PulseAudio) | Should work |
+
+For visual notifications on Linux, install `notify-send` (usually via `libnotify-bin` or `libnotify`).
 
 ## Credits
 
