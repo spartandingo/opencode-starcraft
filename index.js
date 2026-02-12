@@ -8,10 +8,11 @@
 
 import { join } from "path"
 import { homedir } from "os"
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs"
 import { spawn } from "child_process"
 
 const SOUNDS_DIR = join(homedir(), ".config", "opencode", "sounds", "starcraft")
+const CONFIG_PATH = join(homedir(), ".config", "opencode", "opencode-starcraft.json")
 
 // Download URLs from The Sounds Resource
 const SOUND_PACKS = {
@@ -70,19 +71,207 @@ const EVENT_SOUNDS = {
   "permission.asked": ["scv-whaddya-want.wav", "scv-im-not-listening.wav"],
 }
 
+const EVENT_NOTIFICATIONS = {
+  "session.created": {
+    title: "OpenCode Started",
+    body: "New OpenCode session created",
+  },
+  "session.idle": {
+    title: "OpenCode Ready",
+    body: "Task completed",
+  },
+  "session.compacted": {
+    title: "OpenCode Compacted",
+    body: "Conversation was compacted",
+  },
+  "session.error": {
+    title: "OpenCode Error",
+    body: "An error occurred",
+  },
+  "permission.asked": {
+    title: "OpenCode Permission",
+    body: "Action requires approval",
+  },
+}
+
+const DEFAULT_CONFIG = {
+  enabled: true,
+  sound: {
+    enabled: true,
+  },
+  notifications: {
+    enabled: true,
+  },
+  events: {
+    "session.created": {
+      enabled: true,
+      sound: true,
+      visual: true,
+    },
+    "session.idle": {
+      enabled: true,
+      sound: true,
+      visual: true,
+    },
+    "session.compacted": {
+      enabled: true,
+      sound: true,
+      visual: true,
+    },
+    "session.error": {
+      enabled: true,
+      sound: true,
+      visual: true,
+    },
+    "permission.asked": {
+      enabled: true,
+      sound: true,
+      visual: true,
+    },
+  },
+}
+
 function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)]
+}
+
+function truncate(str, maxLength) {
+  if (!str) return ""
+  const cleaned = String(str).replace(/\s+/g, " ").trim()
+  if (cleaned.length <= maxLength) return cleaned
+  return `${cleaned.slice(0, maxLength - 1)}...`
+}
+
+function normalizeEventConfig(input, fallback) {
+  if (typeof input === "boolean") {
+    return {
+      enabled: input,
+      sound: input,
+      visual: input,
+    }
+  }
+
+  return {
+    enabled: input?.enabled ?? fallback.enabled,
+    sound: input?.sound ?? fallback.sound,
+    visual: input?.visual ?? fallback.visual,
+  }
+}
+
+function loadConfig() {
+  if (!existsSync(CONFIG_PATH)) return DEFAULT_CONFIG
+
+  try {
+    const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"))
+    const events = {}
+
+    for (const eventType of Object.keys(DEFAULT_CONFIG.events)) {
+      events[eventType] = normalizeEventConfig(
+        parsed?.events?.[eventType],
+        DEFAULT_CONFIG.events[eventType]
+      )
+    }
+
+    return {
+      enabled: parsed?.enabled ?? DEFAULT_CONFIG.enabled,
+      sound: {
+        enabled: parsed?.sound?.enabled ?? DEFAULT_CONFIG.sound.enabled,
+      },
+      notifications: {
+        enabled:
+          parsed?.notifications?.enabled ?? DEFAULT_CONFIG.notifications.enabled,
+      },
+      events,
+    }
+  } catch {
+    return DEFAULT_CONFIG
+  }
+}
+
+function getNotificationContent(event) {
+  const defaults = EVENT_NOTIFICATIONS[event.type]
+  if (!defaults) return null
+
+  let body = defaults.body
+
+  if (event.type === "session.error") {
+    const errorMessage =
+      event.properties?.error?.data?.message || event.properties?.error?.name
+    if (errorMessage) body = truncate(errorMessage, 100)
+  }
+
+  if (event.type === "permission.asked") {
+    const permission = event.properties?.permission
+    const firstPattern = event.properties?.patterns?.[0]
+    if (permission && firstPattern) {
+      body = `${permission}: ${truncate(firstPattern, 60)}`
+    } else if (permission) {
+      body = `${permission} requested`
+    }
+  }
+
+  return {
+    title: defaults.title,
+    body,
+  }
+}
+
+function playDetached(command, args) {
+  try {
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: "ignore",
+    })
+    child.on("error", () => {})
+    child.unref()
+  } catch {
+    // Best-effort only
+  }
+}
+
+function showNotification(title, body) {
+  if (!title || !body) return
+
+  if (process.platform === "darwin") {
+    playDetached("osascript", [
+      "-e",
+      `display notification ${JSON.stringify(body)} with title ${JSON.stringify(title)}`,
+    ])
+    return
+  }
+
+  if (process.platform === "linux") {
+    playDetached("notify-send", ["-a", "OpenCode", title, body])
+  }
+}
+
+function shouldPlaySound(config, eventType) {
+  if (!config.enabled) return false
+  if (!config.sound.enabled) return false
+
+  const eventConfig = config.events[eventType]
+  if (!eventConfig) return false
+  if (!eventConfig.enabled) return false
+
+  return eventConfig.sound
+}
+
+function shouldShowNotification(config, eventType) {
+  if (!config.enabled) return false
+  if (!config.notifications.enabled) return false
+
+  const eventConfig = config.events[eventType]
+  if (!eventConfig) return false
+  if (!eventConfig.enabled) return false
+
+  return eventConfig.visual
 }
 
 function playSound(file) {
   if (!existsSync(file)) return
 
   const cmd = process.platform === "darwin" ? "afplay" : "paplay"
-  const child = spawn(cmd, [file], {
-    detached: true,
-    stdio: "ignore",
-  })
-  child.unref()
+  playDetached(cmd, [file])
 }
 
 function soundsExist() {
@@ -131,6 +320,8 @@ async function downloadSounds(log) {
 }
 
 export const StarcraftSoundsPlugin = async ({ client }) => {
+  const config = loadConfig()
+
   const log = async (msg) => {
     try {
       await client.app.log({
@@ -156,9 +347,17 @@ export const StarcraftSoundsPlugin = async ({ client }) => {
 
   return {
     event: async ({ event }) => {
+      if (shouldShowNotification(config, event.type)) {
+        const notification = getNotificationContent(event)
+        if (notification) {
+          showNotification(notification.title, notification.body)
+        }
+      }
+
+      if (!shouldPlaySound(config, event.type)) return
+
       const sounds = EVENT_SOUNDS[event.type]
       if (!sounds || sounds.length === 0) return
-
       playSound(join(SOUNDS_DIR, pick(sounds)))
     },
   }
