@@ -6,12 +6,15 @@
 // (sounds.spriters-resource.com). StarCraft is (c) Blizzard Entertainment.
 // Sounds are used under fair use for personal/fan use only.
 
-import { join } from "path"
+import { dirname, join } from "path"
 import { homedir } from "os"
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs"
 import { spawn } from "child_process"
 
 const SOUNDS_DIR = join(homedir(), ".config", "opencode", "sounds", "starcraft")
+const CONFIG_PATH = join(homedir(), ".config", "opencode", "opencode-starcraft.json")
+const DIGEST_DIR = join(homedir(), ".config", "opencode", "digests")
+const DIGEST_PATH = join(DIGEST_DIR, "opencode-starcraft-last.json")
 
 // Download URLs from The Sounds Resource
 const SOUND_PACKS = {
@@ -68,6 +71,131 @@ const EVENT_SOUNDS = {
   ],
   // Permission asked - awaiting orders
   "permission.asked": ["scv-whaddya-want.wav", "scv-im-not-listening.wav"],
+}
+
+const DEFAULT_CONFIG = {
+  sound: {
+    enabled: true,
+  },
+  digest: {
+    enabled: false,
+    onIdle: true,
+    onExit: true,
+    command: null,
+    path: DIGEST_PATH,
+  },
+}
+
+function loadConfig() {
+  if (!existsSync(CONFIG_PATH)) return DEFAULT_CONFIG
+
+  try {
+    const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"))
+    return {
+      sound: {
+        enabled: parsed?.sound?.enabled ?? DEFAULT_CONFIG.sound.enabled,
+      },
+      digest: {
+        enabled: parsed?.digest?.enabled ?? DEFAULT_CONFIG.digest.enabled,
+        onIdle: parsed?.digest?.onIdle ?? DEFAULT_CONFIG.digest.onIdle,
+        onExit: parsed?.digest?.onExit ?? DEFAULT_CONFIG.digest.onExit,
+        command: parsed?.digest?.command ?? DEFAULT_CONFIG.digest.command,
+        path: parsed?.digest?.path ?? DEFAULT_CONFIG.digest.path,
+      },
+    }
+  } catch {
+    return DEFAULT_CONFIG
+  }
+}
+
+function createDigestState() {
+  return {
+    startedAt: new Date().toISOString(),
+    eventCounts: {},
+    lastError: null,
+    lastPermission: null,
+    lastQuestion: null,
+    triggers: [],
+  }
+}
+
+function recordDigestEvent(state, event) {
+  state.eventCounts[event.type] = (state.eventCounts[event.type] || 0) + 1
+
+  if (event.type === "session.error") {
+    state.lastError =
+      event.properties?.error?.data?.message || event.properties?.error?.name || null
+  }
+
+  if (event.type === "permission.asked") {
+    state.lastPermission = {
+      permission: event.properties?.permission || null,
+      patterns: event.properties?.patterns || null,
+    }
+  }
+
+  if (event.type === "question.asked") {
+    const firstQuestion = event.properties?.questions?.[0]
+    state.lastQuestion = {
+      header: firstQuestion?.header || null,
+      question: firstQuestion?.question || null,
+    }
+  }
+}
+
+function buildDigest(state, reason) {
+  return {
+    startedAt: state.startedAt,
+    endedAt: new Date().toISOString(),
+    reason,
+    eventCounts: state.eventCounts,
+    lastError: state.lastError,
+    lastPermission: state.lastPermission,
+    lastQuestion: state.lastQuestion,
+    triggerCount: state.triggers.length,
+  }
+}
+
+function ensureParentDir(filePath) {
+  mkdirSync(dirname(filePath), { recursive: true })
+}
+
+function expandHomePath(inputPath) {
+  if (!inputPath || typeof inputPath !== "string") return DIGEST_PATH
+  if (inputPath.startsWith("~/")) {
+    return join(homedir(), inputPath.slice(2))
+  }
+  return inputPath
+}
+
+function writeDigestFile(path, digest) {
+  ensureParentDir(path)
+  writeFileSync(path, JSON.stringify(digest, null, 2))
+}
+
+function runDigestCommand(command, digestPath) {
+  if (!command || typeof command !== "string") return
+
+  const child = spawn(command, {
+    shell: true,
+    detached: true,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      OPENCODE_STARCRAFT_DIGEST_PATH: digestPath,
+    },
+  })
+  child.unref()
+}
+
+function triggerDigest(config, state, reason) {
+  if (!config.digest.enabled) return
+
+  state.triggers.push({ reason, at: new Date().toISOString() })
+  const digest = buildDigest(state, reason)
+  const digestPath = expandHomePath(config.digest.path)
+  writeDigestFile(digestPath, digest)
+  runDigestCommand(config.digest.command, digestPath)
 }
 
 function pick(arr) {
@@ -131,6 +259,9 @@ async function downloadSounds(log) {
 }
 
 export const StarcraftSoundsPlugin = async ({ client }) => {
+  const config = loadConfig()
+  const digestState = createDigestState()
+
   const log = async (msg) => {
     try {
       await client.app.log({
@@ -154,11 +285,38 @@ export const StarcraftSoundsPlugin = async ({ client }) => {
     }
   }
 
+  let exitTriggered = false
+  const handleExit = (signal) => {
+    if (exitTriggered) return
+    exitTriggered = true
+    if (config.digest.onExit) {
+      try {
+        triggerDigest(config, digestState, `process.${signal}`)
+      } catch {
+        // best-effort
+      }
+    }
+  }
+
+  process.once("SIGINT", () => handleExit("SIGINT"))
+  process.once("SIGTERM", () => handleExit("SIGTERM"))
+
   return {
     event: async ({ event }) => {
+      recordDigestEvent(digestState, event)
+
+      if (event.type === "session.idle" && config.digest.onIdle) {
+        try {
+          triggerDigest(config, digestState, "session.idle")
+        } catch (err) {
+          await log(`Digest generation failed: ${err.message}`)
+        }
+      }
+
+      if (!config.sound.enabled) return
+
       const sounds = EVENT_SOUNDS[event.type]
       if (!sounds || sounds.length === 0) return
-
       playSound(join(SOUNDS_DIR, pick(sounds)))
     },
   }

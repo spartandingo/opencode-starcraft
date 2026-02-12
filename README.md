@@ -2,6 +2,8 @@
 
 StarCraft sound effects plugin for [OpenCode](https://opencode.ai). Plays iconic Protoss and Terran voice lines when things happen in your coding session.
 
+It can also generate a session digest and run a custom command on `session.idle` and/or process exit (`Ctrl+C`, `SIGTERM`).
+
 ## Install
 
 ### From npm (recommended)
@@ -32,6 +34,36 @@ cp opencode-starcraft/index.js ~/.config/opencode/plugins/starcraft-sounds.js
 Sound files are downloaded automatically on first run from [The Sounds Resource](https://www.sounds-resource.com/pc_computer/starcraft/) and cached in `~/.config/opencode/sounds/starcraft/`. No sound files are distributed with this package.
 
 Audio playback uses `child_process.spawn` with platform-native commands (`afplay` on macOS, `paplay` on Linux) -- no additional dependencies required.
+
+## Session digest hook
+
+Create `~/.config/opencode/opencode-starcraft.json` to enable digest generation and command hooks:
+
+```json
+{
+  "digest": {
+    "enabled": true,
+    "onIdle": true,
+    "onExit": true,
+    "path": "~/.config/opencode/digests/opencode-starcraft-last.json",
+    "command": "opencode-starcraft-digest"
+  }
+}
+```
+
+When enabled, the plugin writes a JSON digest with event counters and recent context. If `digest.command` is set, the command runs after digest generation with `OPENCODE_STARCRAFT_DIGEST_PATH` in the environment.
+
+You can also run the digest command manually:
+
+```bash
+opencode-starcraft-digest
+```
+
+Or pass a custom digest path:
+
+```bash
+opencode-starcraft-digest /path/to/digest.json
+```
 
 ## Events
 
