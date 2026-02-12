@@ -33,6 +33,26 @@ Sound files are downloaded automatically on first run from [The Sounds Resource]
 
 Audio playback uses `child_process.spawn` with platform-native commands (`afplay` on macOS, `paplay` on Linux) -- no additional dependencies required.
 
+## Permission helper
+
+The plugin can emit a quick risk hint in OpenCode logs when `permission.asked` fires.
+
+Create `~/.config/opencode/opencode-starcraft.json`:
+
+```json
+{
+  "permissionHelper": {
+    "enabled": true
+  }
+}
+```
+
+When enabled, it logs:
+- Risk level: `low`, `medium`, or `high`
+- Permission name
+- Pattern count
+- A short recommendation to speed up approval decisions
+
 ## Events
 
 | OpenCode Event | Sound | Quote |

@@ -8,10 +8,11 @@
 
 import { join } from "path"
 import { homedir } from "os"
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs"
 import { spawn } from "child_process"
 
 const SOUNDS_DIR = join(homedir(), ".config", "opencode", "sounds", "starcraft")
+const CONFIG_PATH = join(homedir(), ".config", "opencode", "opencode-starcraft.json")
 
 // Download URLs from The Sounds Resource
 const SOUND_PACKS = {
@@ -68,6 +69,68 @@ const EVENT_SOUNDS = {
   ],
   // Permission asked - awaiting orders
   "permission.asked": ["scv-whaddya-want.wav", "scv-im-not-listening.wav"],
+}
+
+const DEFAULT_CONFIG = {
+  sound: {
+    enabled: true,
+  },
+  permissionHelper: {
+    enabled: true,
+  },
+}
+
+function loadConfig() {
+  if (!existsSync(CONFIG_PATH)) return DEFAULT_CONFIG
+
+  try {
+    const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"))
+    return {
+      sound: {
+        enabled: parsed?.sound?.enabled ?? DEFAULT_CONFIG.sound.enabled,
+      },
+      permissionHelper: {
+        enabled:
+          parsed?.permissionHelper?.enabled ?? DEFAULT_CONFIG.permissionHelper.enabled,
+      },
+    }
+  } catch {
+    return DEFAULT_CONFIG
+  }
+}
+
+function assessPermissionRisk(permission, patterns) {
+  const normalizedPermission = String(permission || "").toLowerCase()
+  const patternText = (patterns || []).join(" ").toLowerCase()
+  const patternCount = Array.isArray(patterns) ? patterns.length : 0
+
+  const highSignals = ["exec", "shell", "network", "delete", "write", "sudo"]
+  const mediumSignals = ["read", "list", "search", "glob"]
+
+  const hasHighSignal = highSignals.some(
+    (token) => normalizedPermission.includes(token) || patternText.includes(token)
+  )
+  if (hasHighSignal) {
+    return {
+      level: "high",
+      recommendation: "Review patterns carefully before approving.",
+    }
+  }
+
+  const hasMediumSignal = mediumSignals.some(
+    (token) => normalizedPermission.includes(token) || patternText.includes(token)
+  )
+  if (hasMediumSignal || patternCount > 3) {
+    return {
+      level: "medium",
+      recommendation: "Confirm scope matches what you intend to allow.",
+    }
+  }
+
+  return {
+    level: "low",
+    recommendation: "Likely safe; still validate intent and target files.",
+  }
 }
 
 function pick(arr) {
@@ -131,6 +194,8 @@ async function downloadSounds(log) {
 }
 
 export const StarcraftSoundsPlugin = async ({ client }) => {
+  const config = loadConfig()
+
   const log = async (msg) => {
     try {
       await client.app.log({
@@ -156,6 +221,17 @@ export const StarcraftSoundsPlugin = async ({ client }) => {
 
   return {
     event: async ({ event }) => {
+      if (config.permissionHelper.enabled && event.type === "permission.asked") {
+        const permission = event.properties?.permission
+        const patterns = event.properties?.patterns || []
+        const assessment = assessPermissionRisk(permission, patterns)
+        await log(
+          `Permission helper: level=${assessment.level} permission=${permission || "unknown"} patterns=${patterns.length}. ${assessment.recommendation}`
+        )
+      }
+
+      if (!config.sound.enabled) return
+
       const sounds = EVENT_SOUNDS[event.type]
       if (!sounds || sounds.length === 0) return
 
