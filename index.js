@@ -8,10 +8,11 @@
 
 import { join } from "path"
 import { homedir } from "os"
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs"
 import { spawn } from "child_process"
 
 const SOUNDS_DIR = join(homedir(), ".config", "opencode", "sounds", "starcraft")
+const CONFIG_PATH = join(homedir(), ".config", "opencode", "opencode-starcraft.json")
 
 // Download URLs from The Sounds Resource
 const SOUND_PACKS = {
@@ -68,6 +69,88 @@ const EVENT_SOUNDS = {
   ],
   // Permission asked - awaiting orders
   "permission.asked": ["scv-whaddya-want.wav", "scv-im-not-listening.wav"],
+}
+
+const DEFAULT_CONFIG = {
+  sound: {
+    enabled: true,
+  },
+  telemetry: {
+    enabled: false,
+    endpoint: "http://localhost:3000/opencode/events",
+    timeoutMs: 1500,
+    events: {
+      "session.created": true,
+      "session.idle": true,
+      "session.compacted": true,
+      "session.error": true,
+      "permission.asked": true,
+    },
+  },
+}
+
+function loadConfig() {
+  if (!existsSync(CONFIG_PATH)) return DEFAULT_CONFIG
+
+  try {
+    const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"))
+    const events = {}
+
+    for (const eventType of Object.keys(DEFAULT_CONFIG.telemetry.events)) {
+      events[eventType] =
+        parsed?.telemetry?.events?.[eventType] ??
+        DEFAULT_CONFIG.telemetry.events[eventType]
+    }
+
+    return {
+      sound: {
+        enabled: parsed?.sound?.enabled ?? DEFAULT_CONFIG.sound.enabled,
+      },
+      telemetry: {
+        enabled: parsed?.telemetry?.enabled ?? DEFAULT_CONFIG.telemetry.enabled,
+        endpoint: parsed?.telemetry?.endpoint ?? DEFAULT_CONFIG.telemetry.endpoint,
+        timeoutMs: parsed?.telemetry?.timeoutMs ?? DEFAULT_CONFIG.telemetry.timeoutMs,
+        events,
+      },
+    }
+  } catch {
+    return DEFAULT_CONFIG
+  }
+}
+
+function shouldSendTelemetry(config, eventType) {
+  if (!config.telemetry.enabled) return false
+  return config.telemetry.events[eventType] === true
+}
+
+async function sendTelemetry(config, event, log) {
+  if (!shouldSendTelemetry(config, event.type)) return
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => {
+    controller.abort()
+  }, config.telemetry.timeoutMs)
+
+  try {
+    const payload = {
+      source: "opencode-starcraft",
+      timestamp: new Date().toISOString(),
+      event,
+    }
+
+    await fetch(config.telemetry.endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
+  } catch (err) {
+    await log(`Telemetry send failed: ${err.message}`)
+  } finally {
+    clearTimeout(timeout)
+  }
 }
 
 function pick(arr) {
@@ -131,6 +214,8 @@ async function downloadSounds(log) {
 }
 
 export const StarcraftSoundsPlugin = async ({ client }) => {
+  const config = loadConfig()
+
   const log = async (msg) => {
     try {
       await client.app.log({
@@ -156,6 +241,10 @@ export const StarcraftSoundsPlugin = async ({ client }) => {
 
   return {
     event: async ({ event }) => {
+      void sendTelemetry(config, event, log)
+
+      if (!config.sound.enabled) return
+
       const sounds = EVENT_SOUNDS[event.type]
       if (!sounds || sounds.length === 0) return
 

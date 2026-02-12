@@ -33,6 +33,65 @@ Sound files are downloaded automatically on first run from [The Sounds Resource]
 
 Audio playback uses `child_process.spawn` with platform-native commands (`afplay` on macOS, `paplay` on Linux) -- no additional dependencies required.
 
+## LangGraph telemetry (optional)
+
+You can forward OpenCode events to a local endpoint (for example, a LangGraph service on port `3000`).
+
+Create `~/.config/opencode/opencode-starcraft.json`:
+
+```json
+{
+  "telemetry": {
+    "enabled": true,
+    "endpoint": "http://localhost:3000/opencode/events",
+    "timeoutMs": 1500,
+    "events": {
+      "session.created": true,
+      "session.idle": true,
+      "session.compacted": true,
+      "session.error": true,
+      "permission.asked": true
+    }
+  }
+}
+```
+
+Disable telemetry globally:
+
+```json
+{
+  "telemetry": {
+    "enabled": false
+  }
+}
+```
+
+Disable telemetry for only one event:
+
+```json
+{
+  "telemetry": {
+    "enabled": true,
+    "events": {
+      "session.idle": false
+    }
+  }
+}
+```
+
+Payload sent as JSON:
+
+```json
+{
+  "source": "opencode-starcraft",
+  "timestamp": "2026-02-12T10:00:00.000Z",
+  "event": {
+    "type": "session.idle",
+    "properties": {}
+  }
+}
+```
+
 ## Events
 
 | OpenCode Event | Sound | Quote |
