@@ -31,6 +31,8 @@ cp opencode-starcraft/index.js ~/.config/opencode/plugins/starcraft-sounds.js
 
 Sound files are downloaded automatically on first run from [The Sounds Resource](https://www.sounds-resource.com/pc_computer/starcraft/) and cached in `~/.config/opencode/sounds/starcraft/`. No sound files are distributed with this package.
 
+If sound is fully disabled in config, the plugin skips sound pack download.
+
 Audio playback uses `child_process.spawn` with platform-native commands (`afplay` on macOS, `paplay` on Linux) -- no additional dependencies required.
 
 Visual desktop notifications are best-effort and use platform-native tools (`osascript` on macOS, `notify-send` on Linux).

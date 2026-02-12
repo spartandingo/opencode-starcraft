@@ -267,6 +267,15 @@ function shouldShowNotification(config, eventType) {
   return eventConfig.visual
 }
 
+function shouldManageSounds(config) {
+  if (!config.enabled) return false
+  if (!config.sound.enabled) return false
+
+  return Object.values(config.events).some(
+    (eventConfig) => eventConfig.enabled && eventConfig.sound
+  )
+}
+
 function playSound(file) {
   if (!existsSync(file)) return
 
@@ -337,7 +346,7 @@ export const StarcraftSoundsPlugin = async ({ client }) => {
   }
 
   // Download sounds on first run
-  if (!soundsExist()) {
+  if (shouldManageSounds(config) && !soundsExist()) {
     try {
       await downloadSounds((msg) => log(msg))
     } catch (err) {
