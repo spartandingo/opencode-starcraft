@@ -8,10 +8,11 @@
 
 import { join } from "path"
 import { homedir } from "os"
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "fs"
 import { spawn } from "child_process"
 
 const SOUNDS_DIR = join(homedir(), ".config", "opencode", "sounds", "starcraft")
+const CONFIG_PATH = join(homedir(), ".config", "opencode", "opencode-starcraft.json")
 
 // Download URLs from The Sounds Resource
 const SOUND_PACKS = {
@@ -68,6 +69,107 @@ const EVENT_SOUNDS = {
   ],
   // Permission asked - awaiting orders
   "permission.asked": ["scv-whaddya-want.wav", "scv-im-not-listening.wav"],
+}
+
+const SOUND_PROFILES = {
+  classic: EVENT_SOUNDS,
+  "protoss-only": {
+    "session.idle": ["additional-pylons.wav"],
+    "session.created": ["additional-pylons.wav"],
+    "session.compacted": ["additional-pylons.wav"],
+    "session.error": ["not-enough-minerals-protoss.wav", "not-enough-vespene-gas.wav"],
+    "permission.asked": ["additional-pylons.wav"],
+  },
+  "terran-only": {
+    "session.idle": ["scv-affirmative.wav"],
+    "session.created": ["scv-ready.wav"],
+    "session.compacted": ["your-base-is-under-attack.wav"],
+    "session.error": ["not-enough-minerals-terran.wav", "nuclear-launch-detected.wav"],
+    "permission.asked": ["scv-yes-sir.wav"],
+  },
+  "scv-only": {
+    "session.idle": ["scv-yes-sir.wav", "scv-affirmative.wav"],
+    "session.created": ["scv-ready.wav"],
+    "session.compacted": ["scv-cant-do-that.wav"],
+    "session.error": ["scv-cant-do-that.wav"],
+    "permission.asked": ["scv-whaddya-want.wav", "scv-im-not-listening.wav"],
+  },
+  minimal: {
+    "session.error": ["not-enough-minerals-protoss.wav"],
+    "permission.asked": ["scv-whaddya-want.wav"],
+  },
+  dramatic: {
+    "session.idle": ["your-base-is-under-attack.wav"],
+    "session.created": ["nuclear-launch-detected.wav"],
+    "session.compacted": ["additional-pylons.wav"],
+    "session.error": ["nuclear-launch-detected.wav", "your-base-is-under-attack.wav"],
+    "permission.asked": ["scv-im-not-listening.wav"],
+  },
+  calm: {
+    "session.idle": ["scv-yes-sir.wav"],
+    "session.created": ["scv-ready.wav"],
+    "session.compacted": ["scv-affirmative.wav"],
+    "session.error": ["not-enough-vespene-gas.wav"],
+    "permission.asked": ["scv-whaddya-want.wav"],
+  },
+  strict: {
+    "session.error": ["not-enough-minerals-terran.wav"],
+    "permission.asked": ["scv-cant-do-that.wav"],
+  },
+  retro: {
+    "session.idle": ["scv-affirmative.wav"],
+    "session.created": ["scv-ready.wav"],
+    "session.compacted": ["additional-pylons.wav"],
+    "session.error": ["not-enough-minerals-protoss.wav"],
+    "permission.asked": ["scv-whaddya-want.wav"],
+  },
+  chaos: {
+    "session.idle": ["scv-yes-sir.wav", "your-base-is-under-attack.wav", "additional-pylons.wav"],
+    "session.created": ["scv-ready.wav", "nuclear-launch-detected.wav"],
+    "session.compacted": ["additional-pylons.wav", "scv-cant-do-that.wav"],
+    "session.error": [
+      "nuclear-launch-detected.wav",
+      "your-base-is-under-attack.wav",
+      "not-enough-minerals-protoss.wav",
+      "not-enough-minerals-terran.wav",
+    ],
+    "permission.asked": ["scv-im-not-listening.wav", "scv-whaddya-want.wav", "scv-pissed-0.wav"],
+  },
+}
+
+const DEFAULT_CONFIG = {
+  sound: {
+    enabled: true,
+    profile: "classic",
+  },
+}
+
+function loadConfig() {
+  if (!existsSync(CONFIG_PATH)) return DEFAULT_CONFIG
+
+  try {
+    const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"))
+    return {
+      sound: {
+        enabled: parsed?.sound?.enabled ?? DEFAULT_CONFIG.sound.enabled,
+        profile: parsed?.sound?.profile ?? DEFAULT_CONFIG.sound.profile,
+      },
+    }
+  } catch {
+    return DEFAULT_CONFIG
+  }
+}
+
+function resolveProfile(profile) {
+  if (!profile || typeof profile !== "string") return "classic"
+  if (SOUND_PROFILES[profile]) return profile
+  return "classic"
+}
+
+function getEventSounds(profile, eventType) {
+  const eventSounds = SOUND_PROFILES[profile]?.[eventType]
+  if (!eventSounds || eventSounds.length === 0) return []
+  return eventSounds
 }
 
 function pick(arr) {
@@ -131,6 +233,9 @@ async function downloadSounds(log) {
 }
 
 export const StarcraftSoundsPlugin = async ({ client }) => {
+  const config = loadConfig()
+  const profile = resolveProfile(config.sound.profile)
+
   const log = async (msg) => {
     try {
       await client.app.log({
@@ -156,7 +261,9 @@ export const StarcraftSoundsPlugin = async ({ client }) => {
 
   return {
     event: async ({ event }) => {
-      const sounds = EVENT_SOUNDS[event.type]
+      if (!config.sound.enabled) return
+
+      const sounds = getEventSounds(profile, event.type)
       if (!sounds || sounds.length === 0) return
 
       playSound(join(SOUNDS_DIR, pick(sounds)))

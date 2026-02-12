@@ -33,6 +33,44 @@ Sound files are downloaded automatically on first run from [The Sounds Resource]
 
 Audio playback uses `child_process.spawn` with platform-native commands (`afplay` on macOS, `paplay` on Linux) -- no additional dependencies required.
 
+## Sound profiles
+
+You can switch the plugin between 10 built-in sound styles:
+
+- `classic`
+- `protoss-only`
+- `terran-only`
+- `scv-only`
+- `minimal`
+- `dramatic`
+- `calm`
+- `strict`
+- `retro`
+- `chaos`
+
+Configure in `~/.config/opencode/opencode-starcraft.json`:
+
+```json
+{
+  "sound": {
+    "enabled": true,
+    "profile": "classic"
+  }
+}
+```
+
+If an unknown profile is configured, the plugin falls back to `classic`.
+
+Disable all sounds:
+
+```json
+{
+  "sound": {
+    "enabled": false
+  }
+}
+```
+
 ## Events
 
 | OpenCode Event | Sound | Quote |
