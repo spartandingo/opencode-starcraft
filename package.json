@@ -18,7 +18,8 @@
     "url": "git+https://github.com/spartandingo/opencode-starcraft.git"
   },
   "files": [
-    "index.js"
+    "index.js",
+    "commands/"
   ],
   "dependencies": {
     "jszip": "^3.10.1"

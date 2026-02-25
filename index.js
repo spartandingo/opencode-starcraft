@@ -8,10 +8,22 @@
 
 import { join } from "path"
 import { homedir } from "os"
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "fs"
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  writeFileSync,
+  unlinkSync,
+} from "fs"
 import { spawn } from "child_process"
+import { tool } from "@opencode-ai/plugin"
 
 const SOUNDS_DIR = join(homedir(), ".config", "opencode", "sounds", "starcraft")
+const MUTED_FILE = join(SOUNDS_DIR, ".muted")
+
+function isMuted() {
+  return existsSync(MUTED_FILE)
+}
 
 // Download URLs from The Sounds Resource
 const SOUND_PACKS = {
@@ -156,10 +168,30 @@ export const StarcraftSoundsPlugin = async ({ client }) => {
 
   return {
     event: async ({ event }) => {
+      if (isMuted()) return
+
       const sounds = EVENT_SOUNDS[event.type]
       if (!sounds || sounds.length === 0) return
 
       playSound(join(SOUNDS_DIR, pick(sounds)))
+    },
+    tool: {
+      rts_mute_toggle: tool({
+        description:
+          "Toggle mute/unmute for RTS sound effects. When muted, no sounds will play on session events. When unmuted, sounds resume. Returns the new mute state.",
+        args: {},
+        async execute() {
+          mkdirSync(SOUNDS_DIR, { recursive: true })
+          if (isMuted()) {
+            unlinkSync(MUTED_FILE)
+            playSound(join(SOUNDS_DIR, pick(["scv-affirmative.wav"])))
+            return "Sound effects unmuted. Sounds will now play on session events."
+          } else {
+            writeFileSync(MUTED_FILE, "")
+            return "Sound effects muted. No sounds will play until unmuted."
+          }
+        },
+      }),
     },
   }
 }
