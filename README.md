@@ -37,21 +37,11 @@ Audio playback uses `child_process.spawn` with platform-native commands (`afplay
 
 You can mute sound effects at any time. There are two ways:
 
-**Ask the LLM:** Just say "mute sounds" or "unmute sounds" in your session. The plugin registers an `rts_mute_toggle` tool that the LLM will call.
+**Slash command:** Type `/mute` in the TUI to toggle sounds on/off. No setup required -- the command is registered automatically by the plugin.
 
-**Slash command:** Copy the included command file to your OpenCode commands directory:
+**Ask the LLM:** Say "mute sounds" or "unmute sounds" in your session. The plugin registers an `rts_mute_toggle` tool that the LLM will call.
 
-```bash
-# Global (all projects)
-cp commands/mute.md ~/.config/opencode/commands/mute.md
-
-# Or project-level
-cp commands/mute.md .opencode/commands/mute.md
-```
-
-Then type `/mute` in the TUI to toggle.
-
-Mute state is persisted in `~/.config/opencode/sounds/starcraft/.muted` and survives across sessions. When you unmute, a confirmation sound plays.
+Mute state is persisted across sessions. When you unmute, a confirmation sound plays.
 
 ## Events
 

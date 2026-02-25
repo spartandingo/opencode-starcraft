@@ -166,7 +166,32 @@ export const StarcraftSoundsPlugin = async ({ client }) => {
     }
   }
 
+  function toggleMute() {
+    mkdirSync(SOUNDS_DIR, { recursive: true })
+    if (isMuted()) {
+      unlinkSync(MUTED_FILE)
+      playSound(join(SOUNDS_DIR, "scv-affirmative.wav"))
+      return "Sound effects unmuted. Sounds will now play on session events."
+    } else {
+      writeFileSync(MUTED_FILE, "")
+      return "Sound effects muted. No sounds will play until unmuted."
+    }
+  }
+
   return {
+    config: async (config) => {
+      config.command ??= {}
+      config.command["mute"] = {
+        description: "Toggle StarCraft sound effects on/off",
+        template: "Mute toggled.",
+      }
+    },
+    "command.execute.before": async (input, output) => {
+      if (input.command !== "mute") return
+      const result = toggleMute()
+      await log(result)
+      output.parts = []
+    },
     event: async ({ event }) => {
       if (isMuted()) return
 
@@ -181,15 +206,7 @@ export const StarcraftSoundsPlugin = async ({ client }) => {
           "Toggle mute/unmute for RTS sound effects. When muted, no sounds will play on session events. When unmuted, sounds resume. Returns the new mute state.",
         args: {},
         async execute() {
-          mkdirSync(SOUNDS_DIR, { recursive: true })
-          if (isMuted()) {
-            unlinkSync(MUTED_FILE)
-            playSound(join(SOUNDS_DIR, pick(["scv-affirmative.wav"])))
-            return "Sound effects unmuted. Sounds will now play on session events."
-          } else {
-            writeFileSync(MUTED_FILE, "")
-            return "Sound effects muted. No sounds will play until unmuted."
-          }
+          return toggleMute()
         },
       }),
     },
